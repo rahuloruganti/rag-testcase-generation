@@ -1,0 +1,48 @@
+stages:
+  chunk:
+    cmd: >-
+      python -c "from rag.config import get_config; from rag.chunk import chunk; cfg=get_config(); chunk(cfg)"
+    deps:
+      - rag/chunk.py
+      - rag/config.py
+      - docs/gmail_pytest_suite.py
+      - .env
+    outs:
+      - data/chunks/chunks.jsonl
+
+  index:
+    cmd: >-
+      python -c "from rag.config import get_config; from rag.index import index; cfg=get_config(); index(cfg)"
+    deps:
+      - rag/index.py
+      - rag/config.py
+      - data/chunks/chunks.jsonl
+      - .env
+    outs:
+      - data/faiss/language_chunks_index.faiss
+      - data/faiss/language_chunks_data.pkl
+
+  generate:
+    cmd: >-
+      python -c "import os; from rag.generate import main as gen_main; q=os.getenv('GEN_QUESTION','testcase for blank password validation'); k=int(os.getenv('GEN_K','3')); gen_main(question=q, k=k)"
+    deps:
+      - rag/generate.py
+      - rag/config.py
+      - data/faiss/language_chunks_index.faiss
+      - data/faiss/language_chunks_data.pkl
+      - .env
+    outs:
+      - path: data/generated
+        persist: true
+
+  evaluate:
+    cmd: >-
+      python -c "from rag.config import get_config; from rag.evaluate import evaluate; cfg=get_config(); evaluate(cfg, latest=True)"
+    deps:
+      - rag/evaluate.py
+      - rag/config.py
+      - data/eval/traces
+      - .env
+    metrics:
+      - data/eval/reports/report_context_precision.json
+

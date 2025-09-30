@@ -1,0 +1,15 @@
+# Local Python and environment artifacts
+__pycache__/
+.pytest_cache/
+.venv/
+
+# Environment secrets (never commit real keys)
+.env
+.env.*
+!.env.example
+
+# Data cache (indices, chunks, generated tests)
+data/
+
+# OS files
+.DS_Store
