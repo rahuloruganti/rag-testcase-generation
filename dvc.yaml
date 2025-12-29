@@ -1,10 +1,10 @@
 stages:
   chunk:
     cmd: >-
-      python -c "from pipeline.config import get_config; from rag.chunk import chunk; cfg=get_config(); chunk(cfg)"
+      python -c "from rag.config import get_config; from rag.chunk import chunk; cfg=get_config(); chunk(cfg)"
     deps:
       - rag/chunk.py
-      - pipeline/config.py
+      - rag/config.py
       - docs/gmail_pytest_suite.py
       - .env
     outs:
@@ -12,10 +12,10 @@ stages:
 
   index:
     cmd: >-
-      python -c "from pipeline.config import get_config; from rag.embedding import index; cfg=get_config(); index(cfg)"
+      python -c "from rag.config import get_config; from rag.index import index; cfg=get_config(); index(cfg)"
     deps:
-      - rag/embedding.py
-      - pipeline/config.py
+      - rag/index.py
+      - rag/config.py
       - data/chunks/chunks.jsonl
       - .env
     outs:
@@ -27,7 +27,7 @@ stages:
       python -c "import os; from rag.generate import main as gen_main; q=os.getenv('GEN_QUESTION','testcase for blank password validation'); k=int(os.getenv('GEN_K','3')); gen_main(question=q, k=k)"
     deps:
       - rag/generate.py
-      - pipeline/config.py
+      - rag/config.py
       - data/faiss/language_chunks_index.faiss
       - data/faiss/language_chunks_data.pkl
       - .env
@@ -37,10 +37,10 @@ stages:
 
   evaluate:
     cmd: >-
-      python -c "from pipeline.config import get_config; from rag.evaluate import evaluate; cfg=get_config(); evaluate(cfg, latest=True)"
+      python -c "from rag.config import get_config; from rag.evaluate import evaluate; cfg=get_config(); evaluate(cfg, latest=True)"
     deps:
       - rag/evaluate.py
-      - pipeline/config.py
+      - rag/config.py
       - data/eval/traces
       - .env
     metrics:
