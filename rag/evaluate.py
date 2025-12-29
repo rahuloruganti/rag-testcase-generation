@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-import argparse
-import glob
-import json
-from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
 
 from datasets import Dataset
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -14,7 +9,7 @@ from ragas.llms import LangchainLLMWrapper
 from ragas import evaluate as ragas_evaluate
 from ragas.metrics import context_precision
 
-from .config import get_config
+from pipeline.config import get_config, Config
 
 
 def _load_trace(path: Path) -> Dict[str, Any]:
@@ -28,20 +23,20 @@ def _load_trace(path: Path) -> Dict[str, Any]:
     }
 
 
-def _resolve_trace_path(cfg: Dict[str, Any], latest: bool, trace: Optional[str]) -> Path:
+def _resolve_trace_path(cfg: Config, latest: bool, trace: Optional[str]) -> Path:
     if trace:
         return Path(trace).resolve()
     if latest:
-        candidates = sorted(glob.glob(str(cfg["eval_traces_dir"] / "trace_*.jsonl")), reverse=True)
+        candidates = sorted(glob.glob(str(cfg.eval_traces_dir / "trace_*.jsonl")), reverse=True)
         if not candidates:
             raise FileNotFoundError(
-                f"No traces found under {cfg['eval_traces_dir']}. Run generate first."
+                f"No traces found under {cfg.eval_traces_dir}. Run generate first."
             )
         return Path(candidates[0]).resolve()
     raise ValueError("Provide --trace path or use --latest")
 
 
-def run_context_precision_eval(cfg: Dict[str, Any], trace_path: Path) -> Tuple[float, Path]:
+def run_context_precision_eval(cfg: Config, trace_path: Path) -> Tuple[float, Path]:
     rec = _load_trace(trace_path)
 
     ds = Dataset.from_dict(
@@ -54,14 +49,14 @@ def run_context_precision_eval(cfg: Dict[str, Any], trace_path: Path) -> Tuple[f
         }
     )
 
-    embeddings = HuggingFaceEmbeddings(model_name=cfg["embedding_model"])  # type: ignore
+    embeddings = HuggingFaceEmbeddings(model_name=cfg.embedding_model)  # type: ignore
 
-    if not cfg.get("openrouter_api_key"):
+    if not cfg.openrouter_api_key:
         raise RuntimeError("OPENROUTER_API_KEY not set. Add it to .env for evaluation.")
 
     chat = ChatOpenAI(
-        model=cfg["openrouter_model"],
-        api_key=cfg["openrouter_api_key"],
+        model=cfg.openrouter_model,
+        api_key=cfg.openrouter_api_key,
         base_url="https://openrouter.ai/api/v1",
         temperature=0.0,
         max_retries=2,
@@ -78,18 +73,15 @@ def run_context_precision_eval(cfg: Dict[str, Any], trace_path: Path) -> Tuple[f
 
     # Extract score robustly
     score: float
-    try:
-        if hasattr(result, "to_pandas"):
-            df = result.to_pandas()  # type: ignore[attr-defined]
-            score = float(df["context_precision"].iloc[0])
-        elif isinstance(result, dict) and "context_precision" in result:
-            score = float(result["context_precision"])  # type: ignore[index]
-        else:
-            score = float(result["context_precision"][0])  # type: ignore[index]
-    except Exception as e:  # pragma: no cover
-        raise RuntimeError(f"Failed to parse ragas result: {e}")
+    if hasattr(result, "to_pandas"):
+        df = result.to_pandas()  # type: ignore[attr-defined]
+        score = float(df["context_precision"].iloc[0])
+    elif isinstance(result, dict) and "context_precision" in result:
+        score = float(result["context_precision"])  # type: ignore[index]
+    else:
+        score = float(result["context_precision"][0])  # type: ignore[index]
 
-    report_dir = cfg["eval_reports_dir"]
+    report_dir = cfg.eval_reports_dir
     report_dir.mkdir(parents=True, exist_ok=True)
     out_path = report_dir / "report_context_precision.json"
     payload = {
@@ -100,7 +92,7 @@ def run_context_precision_eval(cfg: Dict[str, Any], trace_path: Path) -> Tuple[f
     return score, out_path
 
 
-def evaluate(cfg: Dict[str, Any], trace: Optional[str] = None, latest: bool = False) -> Tuple[float, Path]:
+def evaluate(cfg: Config, trace: Optional[str] = None, latest: bool = False) -> Tuple[float, Path]:
     path = _resolve_trace_path(cfg, latest=latest, trace=trace)
     return run_context_precision_eval(cfg, path)
 
@@ -115,3 +107,6 @@ def main() -> None:
     score, out = evaluate(cfg, trace=args.trace, latest=args.latest)
     print(f"📊 context_precision: {score:.4f}")
     print(f"💾 Saved report: {out}")
+
+if __name__ == "__main__":
+    main()
