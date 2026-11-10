@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -44,6 +45,9 @@ def chunk(cfg: Config) -> List[Dict[str, Any]]:
 def main() -> None:
     cfg = get_config()
     chunks = chunk(cfg)
+    with cfg.chunks_jsonl.open("w", encoding="utf-8") as f:
+        for row in chunks:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     print(f"🧩 Chunks created: {len(chunks)}")
 
 

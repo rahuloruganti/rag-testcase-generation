@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import List, Dict, Any
 
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -7,15 +8,15 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 from pipeline.config import get_config, Config
-from rag.chunk import chunk
 
 
 def embed(cfg: Config) -> None:
     """
     Generates embeddings for chunks and saves them to a FAISS index.
     """
-    # 1. Get chunks
-    chunks: List[Dict[str, Any]] = chunk(cfg)
+    # 1. Read the chunk stage's output
+    lines = cfg.chunks_jsonl.read_text(encoding="utf-8").splitlines()
+    chunks: List[Dict[str, Any]] = [json.loads(line) for line in lines]
     if not chunks:
         print("⚠️ No chunks found to embed.")
         return

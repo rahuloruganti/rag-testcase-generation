@@ -1,38 +1,40 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
+import json
+from datetime import datetime
 
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
 
 from pipeline.config import get_config, Config
 
+TEMPLATE = """Answer the question based only on the following context:
 
-def generate(cfg: Config, query: str) -> str:
-    """
-    Retrieve relevant chunks and generate a response using Gemini 1.5 Flash.
-    """
-    # 1. Load Vector Store
-    index_path = getattr(cfg, "index_path", Path("data/index"))
-    if isinstance(index_path, Path):
-        load_path = str(index_path)
-    else:
-        load_path = str(index_path)
+{context}
 
-    if not os.path.exists(load_path):
-        raise FileNotFoundError(f"Index not found at {load_path}. Run embedding step first.")
+Question: {question}
+"""
 
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vectorstore = FAISS.load_local(load_path, embeddings, allow_dangerous_deserialization=True)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
-    # 2. Setup LLM (Gemini 1.5 Flash)
-    # Ensure GOOGLE_API_KEY is set in environment
+def generate(cfg: Config, query: str, k: int = 3) -> tuple[str, list[str]]:
+    """Retrieve the k closest chunks and ask Gemini; returns the answer and the chunks it was given."""
+    if not cfg.faiss_index_path.exists():
+        raise FileNotFoundError(f"Index not found at {cfg.faiss_index_path}. Run the index stage first.")
+
+    embeddings = HuggingFaceEmbeddings(model_name=cfg.embedding_model)
+    # The pickle is the docstore this pipeline's own index stage wrote; LangChain refuses to load it without the flag.
+    vectorstore = FAISS.load_local(
+        str(cfg.faiss_dir),
+        embeddings,
+        index_name=cfg.faiss_index_path.stem,
+        allow_dangerous_deserialization=True,
+    )
+    contexts = [doc.page_content for doc in vectorstore.as_retriever(search_kwargs={"k": k}).invoke(query)]
+
+    # Reads GOOGLE_API_KEY from the environment.
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
         temperature=0,
@@ -40,42 +42,29 @@ def generate(cfg: Config, query: str) -> str:
         timeout=None,
         max_retries=2,
     )
+    chain = ChatPromptTemplate.from_template(TEMPLATE) | llm | StrOutputParser()
 
-    # 3. Define Prompt
-    template = """Answer the question based only on the following context:
-
-{context}
-
-Question: {question}
-"""
-    prompt = ChatPromptTemplate.from_template(template)
-
-    # 4. Build Chain
-    def format_docs(docs):
-        return "\n\n".join([d.page_content for d in docs])
-
-    chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-    # 5. Execute
     print(f"❓ Query: {query}")
-    response = chain.invoke(query)
-    
+    response = chain.invoke({"context": "\n\n".join(contexts), "question": query})
+
     if cfg.debug:
         print(f"💡 Response:\n{response}")
-        
-    return response
+
+    return response, contexts
 
 
 def main() -> None:
     cfg = get_config()
-    # Example query, in a real pipeline this might come from args or config
-    test_query = "What are the key test cases for this code?"
-    generate(cfg, test_query)
+    answer, contexts = generate(cfg, cfg.gen_question, cfg.gen_k)
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_path = cfg.generated_dir / f"generated_{stamp}.md"
+    out_path.write_text(answer, encoding="utf-8")
+    trace_path = cfg.eval_traces_dir / f"trace_{stamp}.jsonl"
+    trace = {"question": cfg.gen_question, "contexts": contexts, "answer": answer}
+    trace_path.write_text(json.dumps(trace, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"💾 Saved answer: {out_path}")
+    print(f"💾 Saved trace: {trace_path}")
 
 
 if __name__ == "__main__":
