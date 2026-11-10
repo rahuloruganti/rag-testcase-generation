@@ -20,6 +20,7 @@ class Config:
     data_dir: Path
     faiss_dir: Path
     chunks_dir: Path
+    generated_dir: Path
     # Evaluation dirs
     eval_dir: Path
     eval_traces_dir: Path
@@ -38,6 +39,10 @@ class Config:
     openrouter_model: str
     llm_temperature: float
     llm_max_tokens: int
+
+    # Generation
+    gen_question: str
+    gen_k: int
 
     # Diagnostics
     debug: bool
@@ -71,6 +76,7 @@ def get_config(env_path: Optional[Path] = None) -> Config:
     faiss_dir = Path(os.getenv("FAISS_DIR", str(data_dir / "faiss"))).resolve()
     chunks_dir = Path(os.getenv("CHUNKS_DIR", str(data_dir / "chunks"))).resolve()
     eval_dir = Path(os.getenv("EVAL_DIR", str(data_dir / "eval"))).resolve()
+    generated_dir = data_dir / "generated"
     eval_traces_dir = eval_dir / "traces"
     eval_reports_dir = eval_dir / "reports"
 
@@ -91,22 +97,28 @@ def get_config(env_path: Optional[Path] = None) -> Config:
     llm_temperature = float(os.getenv("LLM_TEMPERATURE", "0.7"))
     llm_max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1000"))
 
+    # Generation
+    gen_question = os.getenv("GEN_QUESTION", "testcase for blank password validation")
+    gen_k = int(os.getenv("GEN_K", "3"))
+
     # Diagnostics
     debug = os.getenv("DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
 
     # Derived files
     chunks_jsonl = chunks_dir / "chunks.jsonl"
     faiss_index_path = faiss_dir / "language_chunks_index.faiss"
-    faiss_data_path = faiss_dir / "language_chunks_data.pkl"
+    # FAISS.save_local writes <index_name>.faiss and <index_name>.pkl, so both share one stem.
+    faiss_data_path = faiss_index_path.with_suffix(".pkl")
 
     # Ensure dirs exist
-    _ensure_dirs(data_dir, faiss_dir, chunks_dir, eval_dir, eval_traces_dir, eval_reports_dir)
+    _ensure_dirs(data_dir, faiss_dir, chunks_dir, generated_dir, eval_dir, eval_traces_dir, eval_reports_dir)
 
     return Config(
         source_file=source_file,
         data_dir=data_dir,
         faiss_dir=faiss_dir,
         chunks_dir=chunks_dir,
+        generated_dir=generated_dir,
         eval_dir=eval_dir,
         eval_traces_dir=eval_traces_dir,
         eval_reports_dir=eval_reports_dir,
@@ -118,6 +130,8 @@ def get_config(env_path: Optional[Path] = None) -> Config:
         openrouter_model=openrouter_model,
         llm_temperature=llm_temperature,
         llm_max_tokens=llm_max_tokens,
+        gen_question=gen_question,
+        gen_k=gen_k,
         debug=debug,
         chunks_jsonl=chunks_jsonl,
         faiss_index_path=faiss_index_path,
